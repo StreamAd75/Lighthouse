@@ -107,15 +107,26 @@ SIZE BANDS (CFG.paid_intensity_rules, employees only, uniform for EVERY industry
 Record the resolved picks (count + size band + industries) and use them through STEP 2-3.
 
 ==================================================
-STEP 1, DUPLICATE SUPPRESSION
+STEP 1, DUPLICATE SUPPRESSION (SHARED, PORTAL-WIDE)
 ==================================================
 
-Pull existing HubSpot deals to avoid re-pitching:
+Pull existing HubSpot deals to avoid re-pitching anyone EITHER user has already
+touched. This is intentionally portal-wide, NOT scoped to the current user, so a
+prospect emailed or declined by one teammate is suppressed for the other and vice
+versa. The shared HubSpot portal is the shared memory: emailed prospects are
+sent-stage deals, declined or skipped ones are Closed/Lost deals, both appear here.
+
 - `mcp__f1dc7048-6352-4a43-9b06-38672a23c164__search_crm_objects`, objectType=deals,
-  hubspot_owner_id = HUBSPOT.owner_id, created in the last 365 days.
+  filter `lighthouse_id` `HAS_PROPERTY` (every Lighthouse deal, ALL owners, ALL stages).
+  Do NOT filter by `hubspot_owner_id` here. Scoping to one owner reintroduces cross-user
+  double-pitching. (The current user's `HUBSPOT.owner_id` is still used at STEP 8 to stamp
+  the NEW deals this sweep creates, just not for this suppression pull.)
+- PAGINATE through every page (follow the `after` paging cursor, or step `offset` by the
+  page size) until the results are exhausted. The combined two-user pile will exceed one
+  page of 100, and a partial pull silently misses older suppressions.
 - Extract every email and domain from deal description blobs (`contact.email` and
-  `contact_email`) and associated contacts.
-- Build SUPPRESSED_EMAILS and SUPPRESSED_DOMAINS.
+  `contact_email`) and associated contacts, across the full paginated set.
+- Build SUPPRESSED_EMAILS and SUPPRESSED_DOMAINS from that full set.
 - Never touch a domain in the suppression list, even if Apollo surfaces it.
 
 ==================================================
