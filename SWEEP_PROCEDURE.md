@@ -9,6 +9,15 @@ sweep picker builds).
 Read this before running a sweep. It references `CFG.*` values from
 `lighthouse-config.json` and never hardcodes data that lives in the config.
 
+TWO ENTRY MODES share this engine:
+1. SWEEP (the broad scan), STEP 0 through STEP 9 below. Sources a batch from Apollo
+   per the ICP and the resolved pick mix. This is "Sweep the waters".
+2. GUIDE TO HARBOR (single-target), the section at the bottom of this file. Drew drops
+   one or more specific URLs and each is run through the same per-prospect machinery
+   (STEP 3 onward), with a deeper audit. This is the "Guide to Harbor" button.
+Both modes write the SAME legacy blob (STEP 7), push the SAME way (STEP 8), and log to
+the SAME file (STEP 9). The only difference is the front: how the prospect is sourced.
+
 ==================================================
 STEP 0, LOAD CONFIG
 ==================================================
@@ -283,8 +292,11 @@ logo_source, locations, key_metric, estimated_media_budget, fit_score, lighthous
 why_now, caveats, contact{name,title,email,linkedin_url,why_decision_maker},
 secondary_contact{name,title} (v6.1, for the standard redirect P.S., null only if no
 second contact exists), potential, drafts[3], signals{tech_gap,intent,growth}, ad_audit.
-Add a `tier` field naming which tier this prospect came from. Do NOT include top-level diagnosis/service_fit/gbp/paid_audit/
-contact_email/contact_name/contact_title/contact_why.
+Add a `tier` field naming which tier this prospect came from. Add a `source` field:
+"swept" for a normal sweep prospect, "manual_url" for a Guide to Harbor prospect. The
+artifact reads this to stamp the card origin badge ("Swept" vs "Harbored"); a missing
+source defaults to "Swept" for pre-existing cards. Do NOT include top-level
+diagnosis/service_fit/gbp/paid_audit/contact_email/contact_name/contact_title/contact_why.
 
 ==================================================
 STEP 8, PUSH TO HUBSPOT
@@ -307,6 +319,112 @@ tier_3_count, audits_succeeded, audits_failed, apollo_credits_used_estimate, not
 Then a tight summary to Drew (max ~10 lines): how many pushed, per-tier breakdown, audits
 succeeded vs failed, a reminder to click "Sync from HubSpot" in the artifact, and the top 3
 by fit_score.
+
+==================================================
+GUIDE TO HARBOR (SINGLE-TARGET MODE)
+==================================================
+
+Drew hand-picks one or more specific URLs and each is guided into the pipeline as a
+prospect card, badge "Harbored". This is the inverse of a sweep: no ICP query, no pick
+mix, no tier quotas. The vessel is already chosen, you just bring it in. Each URL runs
+the SAME per-prospect machinery (STEP 3 onward) plus a DEEPER audit, and produces the
+SAME legacy blob, HubSpot deal, and log line as a swept prospect.
+
+TRIGGER: Drew pastes a command from the artifact's "Guide to Harbor" button, or asks in
+chat, of the form:
+```
+Run StreamAd Lighthouse "Guide to Harbor" on these URLs (single-target mode):
+  - https://example.com | note: referred by Jim at the chamber lunch
+  - https://acme-hvac.com
+```
+Each line is one URL with an OPTIONAL "| note: ..." context tail. Process every URL.
+
+STEP H0, LOAD CONFIG + SYNC CHECK
+- Same as STEP 0 and the STEP 0 SYNC CHECK above. Load CFG, bind the same values,
+  run `bash sync-config.sh`, require RESULT: CLEAN before proceeding.
+
+STEP H1, SUPPRESSION (SHARED, PORTAL-WIDE)
+- Build SUPPRESSED_EMAILS / SUPPRESSED_DOMAINS exactly as STEP 1 (portal-wide, paginate).
+- For each input URL, normalize to a bare domain (strip scheme, www, path, query, utm).
+- If the domain is already in SUPPRESSED_DOMAINS (already on the board), DO NOT create a
+  duplicate. Instead surface the existing deal: report its company name, HubSpot stage,
+  and deal link so Drew can see where it stands, then move to the next URL.
+
+STEP H2, COMPANY RESOLUTION (Apollo org enrich, replaces STEP 2)
+- For each surviving domain, call
+  `mcp__9f57738b-534f-43ec-9b5d-6ef914c816b7__apollo_organizations_enrich` on the domain.
+- If Apollo returns NO org for the domain, report "No data found in Apollo." for that URL
+  and move on. No card is built for it. (A hand-picked URL with no Apollo record is the one
+  case Guide to Harbor produces nothing.)
+- If an org is returned, classify it to the CLOSEST tier by its industry (map the Apollo
+  industry to tier 1 / 2 / 3 using the ICP `industries_preferred`). If it maps to none of
+  the three, default to TIER 1 for the potential/budget math and add a caveat to the card:
+  "Off-ICP, hand-picked URL, tier is best-effort." Never reject a hand-picked URL for being
+  off-ICP, the whole point is Drew chose it deliberately.
+
+STEP H3, PEOPLE + EMAIL (per STEP 3, with a loosened fallback)
+- Run STEP 3 against the resolved org id: primary decision maker via
+  `apollo_mixed_people_api_search` using the classified tier's `person` block, plus the
+  STANDARD secondary contact for the redirect P.S.
+- NO-DM FALLBACK (single-target only): if no person matches the tier's strict title filter,
+  DROP the title filter and take the most senior marketing-adjacent person Apollo has for
+  that org. Capture name, title, email_status, linkedin_url as usual. Do not leave contact
+  null when a real person exists, loosen instead.
+- EMAIL GATE, RELAXED FOR HAND-PICKED URLS: apply CFG.apollo.email_gate as normal, but if
+  the selected DM's email fails the gate, DO NOT drop the prospect (a sweep would). Build the
+  card anyway, keep the email, and set a caveat "Email unverified, confirm before send" and
+  flag it on the contact. Drew decides whether to send. The Send button already disables when
+  there is genuinely no email; an unverified-but-present email shows with the caveat.
+
+STEP H4, DEEPER PAID AUDIT (extends STEP 4)
+- Run STEP 4 (4a-4j) in full, then go deeper because this is a single hand-picked target,
+  not one of six in a batch:
+  - MORE PAGES: discover and audit up to 3 inner pages (not just 1), preferring
+    /pricing|services|about|contact|locations|book|demo/ so the pixel sweep is thorough.
+  - LIVE AD CHECK: do not stop at "is a pixel present". Open the ad-library URLs already in
+    the references array (Google Ads Transparency, Meta Ad Library) via Chrome and record
+    whether the advertiser is running LIVE ads right now. Store on the audit as
+    `live_ads{google: bool|null, meta: bool|null, notes}`. A live ad is a far stronger
+    signal than a tracking pixel and feeds the draft's "why now".
+  - HIRING SIGNAL: call
+    `mcp__9f57738b-534f-43ec-9b5d-6ef914c816b7__apollo_organizations_job_postings` for the
+    org. If they are hiring a marketing, growth, demand-gen, or paid-media role, capture it
+    as `hiring_signal{titles:[...], note}` on the blob. This is a timely, specific outreach
+    hook a broad sweep never surfaces.
+- Everything else (paid_intensity by employee count, Wayback launch year, logo) is unchanged.
+  The whale/dolphin/fish size tag and the tier tag render on the Harbored card exactly as on
+  a swept card.
+
+STEP H5, POTENTIAL + BUDGET (STEP 5 and 5.5, unchanged)
+- Use the classified tier from H2 for the contract-potential and media-budget math.
+
+STEP H6, DRAFTS (STEP 6, with the per-URL note as context)
+- Generate the three drafts per the doctrine exactly as STEP 6. If the URL carried a
+  "| note: ..." tail, treat that note as a high-priority personalization source: weave the
+  real reason Drew picked them into draft[0]'s opening where it reads naturally (referral
+  name, where he saw them, the event). Never fabricate around the note, use it verbatim in
+  spirit. If there is also a hiring_signal or a live_ads finding, those are available as
+  additional "why now" hooks. Drew's note wins when both exist.
+
+STEP H7, BLOB (STEP 7) — set `source: "manual_url"`, add `harbor_note` (the verbatim note or
+null), `hiring_signal` (or null), and `live_ads` (or null) to the blob. Everything else per
+STEP 7. The off-ICP caveat from H2, the unverified-email caveat from H3, and any audit
+caveats all go in `caveats`.
+
+STEP H8, PUSH TO HUBSPOT (STEP 8, unchanged) — same deal creation, dealname "{Company}, {Contact}".
+
+STEP H9, LOG + NOTIFY — append one JSONL line as STEP 9 but with
+`mix_source: "guide_to_harbor"`, `prospects_pushed` = how many cards were created,
+`urls_in` = how many URLs were submitted, `no_apollo` = how many returned no Apollo data,
+`suppressed` = how many were already on the board. Then a tight per-URL summary to Drew:
+for each URL, Harbored (with tier + size), already-on-board (with stage), or no-Apollo-data.
+Remind him to click "Sync from HubSpot" in the artifact.
+
+GUIDE TO HARBOR GUARDRAILS (in addition to the global ones below):
+- Never auto-send. Harbored prospects are drafts like any other, Drew sends from the artifact.
+- Never duplicate a domain already on the board, surface the existing card instead.
+- The relaxed email gate is single-target ONLY. A broad sweep still drops on a failed gate.
+- Close every Chrome tab opened during the deeper audit, even on error.
 
 ==================================================
 GUARDRAILS
