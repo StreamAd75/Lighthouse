@@ -281,6 +281,13 @@ seniority tier (CFG.seniority_messaging_tiers), anti-AI voice rules, personaliza
 DSP mention rule, subject/close alignment, 80-120 word body, 6-word subject. Never hardcode
 voice rules here that contradict the doctrine.
 
+DELIVERY AND SIGNATURES (CFG.delivery): drafts reach the sender via the artifact's Open in
+Outlook button, an OWA compose deeplink carrying To, Subject, and Body only (CC and BCC are
+clipboard pastes, the sender reviews and sends from Outlook, nothing sends automatically).
+NEVER include a signature, sign off, name, calendar link, or contact block in any draft
+body, Outlook auto appends the sender signature at send time. This applies equally to
+chat-generated follow ups, reply with subject, body, and a ready deeplink, no signature.
+
 ==================================================
 STEP 7, BUILD THE PROSPECT BLOB (LEGACY SHAPE, CRITICAL)
 ==================================================
