@@ -437,7 +437,7 @@
           "Mortgage Lending",
           "Private Lending",
           "Insurance",
-          "Retirement Planning",
+          "Law Practice",
           "Accounting",
           "Tax Strategy"
         ],
@@ -450,7 +450,7 @@
           "Mortgage lenders",
           "Private lending firms",
           "Insurance agencies",
-          "Retirement planning firms",
+          "Law firms",
           "Tax strategy firms",
           "Investment groups"
         ]
@@ -551,9 +551,9 @@
             ]
           },
           {
-            "label": "Retirement Planning Firms",
+            "label": "Law Firms",
             "industries": [
-              "Retirement Planning"
+              "Law Practice"
             ]
           },
           {
